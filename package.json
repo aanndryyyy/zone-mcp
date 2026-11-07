@@ -1,0 +1,49 @@
+{
+  "name": "zone-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for the Zone.ee (ZoneID API v2): domains, DNS records, webhosting, mail, MySQL, cron, SSL and cloud VPS.",
+  "type": "module",
+  "bin": {
+    "zone-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "assets",
+    "spec",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "start": "node dist/index.js",
+    "test": "npm run build && node scripts/smoke.mjs"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "zone.ee",
+    "zone.eu",
+    "zoneid",
+    "dns",
+    "webhosting"
+  ],
+  "author": "Andry Pedak",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aanndryyyy/zone-mcp.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2"
+  }
+}
