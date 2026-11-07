@@ -133,6 +133,16 @@ function fqdn(name: string, zone: string): string {
   return n === z || n.endsWith(`.${z}`) ? n : `${n}.${z}`;
 }
 
+/**
+ * A record as returned by the tools: `type` is the record type, and the API's own `type` field (URL redirect status,
+ * SSHFP fingerprint type) is renamed to the matching input name so a listed record feeds straight into an update.
+ */
+const outRecord = (type: (typeof DNS_TYPES)[number], raw: unknown) => {
+  const { type: apiType, ...rest } = (slim(raw) ?? {}) as Record<string, unknown>;
+  const renamed = type === "url" ? "redirect_type" : type === "sshfp" ? "fingerprint_type" : undefined;
+  return { ...rest, ...(renamed && apiType !== undefined ? { [renamed]: apiType } : {}), type };
+};
+
 const describeRecord = (type: string, r: any) =>
   `${type.toUpperCase()} ${r?.name ?? "?"} → ${r?.destination ?? "?"}` + (r?.priority !== undefined ? ` (priority ${r.priority})` : "");
 
@@ -272,7 +282,7 @@ export function registerTools(server: McpServer, client: ZoneClient): void {
       const lists = await Promise.all(
         types.map(async (t) => {
           const res = await client.request("GET", `/dns/${seg(zone)}/${t}`);
-          return asArray(slim(res.data)).map((r: any) => ({ type: t, ...r }));
+          return asArray(res.data).map((r) => outRecord(t, r));
         }),
       );
       let records = lists.flat();
@@ -308,7 +318,7 @@ export function registerTools(server: McpServer, client: ZoneClient): void {
     run(async ({ zone, type, name, destination, ...rest }) => {
       const body = dnsBody(type, { name: fqdn(name, zone), destination, ...rest }, true);
       const res = await client.request("POST", `/dns/${seg(zone)}/${type}`, { body });
-      return { record: { type, ...(slim(asArray(res.data)[0] ?? body) as object) } };
+      return { record: outRecord(type, asArray(res.data)[0] ?? body) };
     }),
   );
 
@@ -352,7 +362,7 @@ export function registerTools(server: McpServer, client: ZoneClient): void {
       for (const k of writable) if (current[k] !== undefined && current[k] !== null) body[k] = current[k];
       Object.assign(body, changes);
       const res = await client.request("PUT", `/dns/${seg(zone)}/${type}/${seg(id)}`, { body });
-      return { status: "updated", record: { type, ...(slim(asArray(res.data)[0] ?? body) as object) } };
+      return { status: "updated", record: outRecord(type, asArray(res.data)[0] ?? body) };
     }),
   );
 
