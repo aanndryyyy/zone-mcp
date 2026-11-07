@@ -20,6 +20,8 @@ Use it from Claude or any other MCP client to manage domains, DNS records, mail 
 | `create_mail_forwarder` / `update_mail_forwarder` / `delete_mail_forwarder` | Manage forwarders (aliases) |
 | `list_mysql` | MySQL databases and database users |
 | `list_cron_jobs` / `list_ssl_certificates` | Cron jobs and SSL certificates. Private keys are never returned |
+| `get_ssh_access` | SSH user, server IP, access mode, whitelisted IPs, registered keys vs. your local keys, and a test login, with `next_steps` when something is missing |
+| `read_logs` | Newest lines of a webhosting's Apache access/error, PHP or PM2 logs over SSH, filtered on the server by host, HTTP status and text, optionally including rotated days |
 | `find_endpoints` / `describe_endpoint` | Search the bundled OpenAPI spec, and show an endpoint's parameters and body fields |
 | `zone_api_request` | Call any ZoneID API endpoint. POST, PUT and DELETE ask you to confirm first |
 
@@ -74,8 +76,21 @@ claude mcp add -s user zone -- node "$PWD/dist/index.js"
 | `ZONE_API_TOKEN` | – | ZoneID API token |
 | `ZONE_KEYCHAIN_SERVICE` | `zone-ee-api` | macOS Keychain service the server reads when the two variables above are not set |
 | `ZONE_API_URL` | `https://api.zone.eu/v2` | Override the API base URL |
+| `ZONE_SSH_KEY` | – | Private key file for the SSH tools (sets `IdentitiesOnly`). Without it, ssh uses your agent, `~/.ssh/config` and default keys |
+
+### SSH tools
+
+`read_logs` and `get_ssh_access` run your system `ssh` with your own keys; nothing is uploaded and no key is stored. They work on webhostings (shared and Privaatserver), not cloud VPS.
+
+- **Host-key pinning.** The server's host keys are fetched with `ssh-keyscan` and accepted only when their SHA256 fingerprint matches the one the ZoneID API reports for that webhosting. They go into a temporary known_hosts file, removed on exit; `~/.ssh/known_hosts` is not touched.
+- **No shell injection.** The remote side always runs a fixed script. Filter text reaches it base64-encoded and is matched literally (`grep -F`).
+- **Read-only.** Neither tool changes anything. To register a key or whitelist an IP, `get_ssh_access` points to the `zone_api_request` calls, which ask you to confirm. It never suggests switching SSH access from `public` to `whitelist` on its own, because that would lock out keys that connect from changing IPs, such as CI deploy keys.
+- **Untrusted output.** Log lines contain whatever visitors and bots sent (URLs, user agents). Treat them as data, not instructions.
 
 ## Example prompts
+
+- "Show the last 50 5xx errors on shop.example.com from the past three days."
+- "Why can't I SSH into example.com?"
 
 - "Which of my domains expire in the next 30 days?"
 - "Show the MX and TXT records for example.com."

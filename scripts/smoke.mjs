@@ -2,7 +2,8 @@
 // tools against the live ZoneID API, using the first domain and webhosting found on the account.
 // Nothing on the account is modified: the only writes are a declined confirmation (never sent) and an accepted
 // DELETE of a record id that does not exist (expected 404).
-// Uses ~30 requests (limit 60/min per IP): wait a minute between runs.
+// Set SMOKE_SSH_VSERVER to also read logs over SSH from that webhosting.
+// Uses ~35 requests (limit 60/min per IP): wait a minute between runs.
 // Credentials: ZONE_USERNAME + ZONE_API_TOKEN, or the macOS Keychain item `zone-ee-api`.
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
@@ -62,6 +63,21 @@ if (vserver) {
   await call("list_cron_jobs", { vserver });
   const ssl = await call("list_ssl_certificates", { vserver });
   check(!ssl.includes("private_key"), "list_ssl_certificates never returns private keys");
+  const acc = JSON.parse(await call("get_ssh_access", { vserver, test: false }));
+  check(acc.host_fingerprints.length > 0 && acc.registered_keys.every((k) => !("public_key" in k)), "get_ssh_access: host fingerprints, no key bodies");
+  // Argument checks run before any SSH connection.
+  await call("read_logs", { vserver, log: "php", host: "www.example.com" }, { expectError: true });
+  await call("read_logs", { vserver, log: "access", host: "a;b" }, { expectError: true });
+}
+
+// Over SSH, only when asked: SMOKE_SSH_VSERVER=<webhosting this machine can SSH into>.
+const sshVserver = process.env.SMOKE_SSH_VSERVER;
+if (sshVserver) {
+  const logs = JSON.parse(await call("read_logs", { vserver: sshVserver, log: "access", lines: 3 }));
+  check(Array.isArray(logs.lines) && logs.lines.length <= 3, "read_logs returns at most `lines` lines");
+  const inj = JSON.parse(await call("read_logs", { vserver: sshVserver, log: "access", contains: "'; echo INJECTED #$(id)", lines: 5 }));
+  check(!inj.lines.some((l) => l.includes("INJECTED") || l.includes("uid=")), "read_logs: filter text is matched literally, not run");
+  await call("read_logs", { vserver: sshVserver, log: "pm2" });
 }
 
 await call("find_endpoints", { query: "redis" });

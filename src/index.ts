@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { ZoneClient } from "./client.js";
+import { SshRunner } from "./ssh.js";
 import { registerTools } from "./tools.js";
 
 const { version, description } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
@@ -26,6 +27,9 @@ const client = new ZoneClient({
   keychainService: process.env.ZONE_KEYCHAIN_SERVICE,
   userAgent: `zone-mcp/${version}`,
 });
+
+const ssh = new SshRunner(client);
+process.on("exit", () => ssh.cleanup());
 
 const handle = serveStdio(
   () => {
@@ -51,10 +55,11 @@ const handle = serveStdio(
           "DNS record names are FQDNs; get a record's `id` from list_dns_records before updating or deleting it. " +
           "For anything without a dedicated tool: find_endpoints → describe_endpoint → zone_api_request. " +
           "The API allows 60 requests/min per IP, so don't poll. DNSSEC activation and DNS TTLs can't be changed " +
-          "through the API (use https://my.zone.eu).",
+          "through the API (use https://my.zone.eu). read_logs reads a webhosting's Apache, PHP and PM2 logs over SSH " +
+          "with this machine's SSH keys; if SSH fails, get_ssh_access shows why and how to fix it.",
       },
     );
-    registerTools(server, client);
+    registerTools(server, client, ssh);
     return server;
   },
   { onerror: (err) => console.error("[zone-mcp]", err) },

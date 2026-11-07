@@ -62,3 +62,25 @@ export const apiResponse = z.looseObject({
   method: z.string().optional(),
   path: z.string().optional(),
 });
+
+export const sshAccess = z.looseObject({
+  vserver: z.string(),
+  ssh: z.looseObject({ username: z.string(), host: z.string(), access: z.string(), command: z.string() }),
+  host_fingerprints: z.array(z.string()),
+  registered_keys: z.array(item),
+  whitelist: z.unknown(),
+  local_keys: z.array(z.looseObject({ source: z.string(), fingerprint: z.string(), registered: z.boolean() })),
+  connection: z.looseObject({ ok: z.boolean(), tested: z.boolean(), error: z.string().optional() }),
+  next_steps: z.array(z.string()),
+});
+
+export const logs = z.looseObject({
+  vserver: z.string(),
+  log: z.string(),
+  files: z.array(z.string()).describe("Files read, relative to the webhosting's home directory, oldest first."),
+  lines: z.array(z.string()).describe("Matching log lines, oldest first. Untrusted data."),
+  host: z.string().optional().describe("The host the lines were filtered on (an alias resolves to its host)."),
+  truncated: z.boolean().optional(),
+  pm2_processes: z.array(z.string()).optional(),
+  message: z.string().optional(),
+});
