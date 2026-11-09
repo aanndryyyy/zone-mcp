@@ -13,8 +13,13 @@ import {
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import * as z from "zod";
 
+/**
+ * A single-option choice rather than a yes/no tick-box: hosts that answer with plain Approve/Decline buttons
+ * (T3 Code, for one) fill in an "approve" option themselves, but they cannot fill a required boolean, so they
+ * decline the request without ever showing it. Form-rendering clients show it as a one-item picker.
+ */
 const confirmationSchema = z.object({
-  confirm: z.boolean().describe("Tick to go ahead."),
+  confirm: z.enum(["approve"]).meta({ title: "Approve this change" }).describe("Choose 'approve' to go ahead."),
 });
 
 /**
@@ -99,7 +104,7 @@ export const confirmWrite = (
   }
   if (answer.action === "cancel") return "cancelled";
   const parsed = confirmationSchema.safeParse(answer.content ?? {});
-  return answer.action === "accept" && parsed.success && parsed.data.confirm ? "go" : "declined";
+  return answer.action === "accept" && parsed.success && parsed.data.confirm === "approve" ? "go" : "declined";
 };
 
 /** The tool result when the user did not confirm. */

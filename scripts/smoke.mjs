@@ -103,17 +103,24 @@ if (zone) {
   await decliner.close();
 
   let lastPrompt = "";
+  let lastSchema;
   const accepter = await connect("zone-smoke-accept", {
     elicit: async (req) => {
       lastPrompt = req.params.message;
+      lastSchema = req.params.requestedSchema;
       console.log("  prompt:", lastPrompt.replace(/\s+/g, " "));
-      return { action: "accept", content: { confirm: true } };
+      return { action: "accept", content: { confirm: "approve" } };
     },
   });
   // Accepted, so it reaches the API: record id 0 does not exist, so this must be a 404 and nothing is deleted.
   const r3 = await caller(accepter)("delete_dns_record", { zone, type: "txt", id: "0" }, { expectError: true });
   check(r3.includes("404"), "accepted confirmation reaches the API (404 for a nonexistent record)");
   check(lastPrompt.includes("record 0"), "confirmation for an unknown id names the id, not some other record");
+  // Hosts with plain Approve/Decline buttons (T3 Code) can only answer a choice with an "approve" option.
+  check(
+    JSON.stringify(lastSchema?.properties?.confirm?.enum) === '["approve"]',
+    "confirmation asks for an 'approve' choice, which button-only hosts can answer",
+  );
   await accepter.close();
 }
 
