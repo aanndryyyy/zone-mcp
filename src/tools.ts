@@ -147,6 +147,10 @@ const outRecord = (type: (typeof DNS_TYPES)[number], raw: unknown) => {
 const describeRecord = (type: string, r: any) =>
   `${type.toUpperCase()} ${r?.name ?? "?"} → ${r?.destination ?? "?"}` + (r?.priority !== undefined ? ` (priority ${r.priority})` : "");
 
+/** read_logs: the most lines one call returns, and the cap on ssh output (long lines are cut at MAX_LINE_CHARS). */
+const LOG_MAX_LINES = 50_000;
+const LOG_MAX_BYTES = 32 * 1024 * 1024;
+
 export function registerTools(server: McpServer, client: ZoneClient, ssh: SshRunner): void {
   /**
    * Gate a write on user confirmation (when the client can show a form). `describe` is only called when a prompt
@@ -679,8 +683,6 @@ export function registerTools(server: McpServer, client: ZoneClient, ssh: SshRun
     .string()
     .regex(/^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/, "A host name like 'www.example.com'.");
 
-  const LOG_CHAR_BUDGET = 40_000;
-
   server.registerTool(
     "read_logs",
     {
@@ -713,7 +715,13 @@ export function registerTools(server: McpServer, client: ZoneClient, ssh: SshRun
           .describe("pm2: the process name. Omit to list the processes that have logs."),
         pm2_stream: z.enum(["out", "error"]).optional().describe("pm2: stdout (out, default) or stderr (error) log."),
         days: z.number().int().min(0).max(14).optional().describe("Also read this many rotated (older) files (default 0: current file only)."),
-        lines: z.number().int().min(1).max(1000).optional().describe("Lines to return (default 100, max 1000)."),
+        lines: z
+          .number()
+          .int()
+          .min(1)
+          .max(LOG_MAX_LINES)
+          .optional()
+          .describe(`Lines to return (default 100, max ${LOG_MAX_LINES}).`),
       }),
       outputSchema: out.logs,
       annotations: { readOnlyHint: true, openWorldHint: true },
@@ -740,7 +748,7 @@ export function registerTools(server: McpServer, client: ZoneClient, ssh: SshRun
         days,
         lines: args.lines ?? 100,
       });
-      const raw = await ssh.run(vserver, script);
+      const raw = await ssh.run(vserver, script, { maxBytes: LOG_MAX_BYTES });
       const res = parseLogOutput(raw.stdout);
       if (res.pm2_processes) {
         return {
@@ -754,19 +762,21 @@ export function registerTools(server: McpServer, client: ZoneClient, ssh: SshRun
             : "Pass pm2_process: one of pm2_processes.",
         };
       }
-      // Keep the newest lines within a size budget (MCP clients cap tool output; the result is sent twice).
+      // Nothing is trimmed here: clients that cap tool output (Claude Code) save a large result to a file instead.
       let lines = res.lines;
-      let size = 0;
-      let cut = lines.length;
-      while (cut > 0 && size + lines[cut - 1].length + 4 <= LOG_CHAR_BUDGET) size += lines[--cut].length + 4;
-      const truncated = raw.truncated || cut > 0;
-      if (cut > 0) lines = lines.slice(cut);
+      const truncated = raw.truncated;
+      // The cap can cut the stream mid-line.
+      if (truncated && lines.length) lines = lines.slice(0, -1);
       const notes: string[] = [];
       if (resolved?.via) notes.push(`'${resolved.via}' is logged as '${resolved.host}'; filtered on that.`);
       if (!res.files.length) {
         notes.push(days ? "No matching log file exists on this webhosting." : "No current log file; older days may exist: try `days: 5`.");
       }
-      if (truncated) notes.push(`Output limit reached: these are the newest ${lines.length} lines. Narrow with host/status/contains or lower \`lines\`.`);
+      if (truncated) {
+        notes.push(
+          `Output stopped at ${LOG_MAX_BYTES / 1024 / 1024} MB: these ${lines.length} lines are the OLDEST of the requested range. Narrow with host/status/contains or lower \`lines\`.`,
+        );
+      }
       return {
         vserver,
         log,
