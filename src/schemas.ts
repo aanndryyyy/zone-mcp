@@ -7,7 +7,7 @@
  */
 import * as z from "zod";
 
-const item = z.looseObject({});
+export const item = z.looseObject({});
 
 export const pager = z
   .looseObject({ page: z.number(), pages: z.number(), limit: z.number(), items: z.number() })
@@ -20,12 +20,23 @@ export const list = (key: string) => z.looseObject({ [key]: z.array(item), pager
 export const object = (key: string) => z.looseObject({ [key]: item.nullable() });
 
 const writeStatus = {
-  status: z.enum(["updated", "deleted", "declined", "cancelled"]).optional(),
+  status: z
+    .string()
+    .optional()
+    .describe("What happened: created, updated, deleted, requested, started…, or declined / cancelled when the user said no."),
   message: z.string().optional().describe("Set when the user declined or dismissed the confirmation."),
 };
 
 /** Result of a confirmed write: the resource, or a declined/cancelled status. */
 export const objectWrite = (key: string) => z.looseObject({ ...writeStatus, [key]: item.optional() });
+
+/** Result of a confirmed write whose payload is several named parts. */
+export const write = (shape: z.ZodRawShape = {}) =>
+  z.looseObject({ ...writeStatus, ...Object.fromEntries(Object.entries(shape).map(([k, v]) => [k, (v as z.ZodType).optional()])) });
+
+/** A read returning several named parts (objects or lists). */
+export const parts = (shape: z.ZodRawShape) => z.looseObject(shape);
+export const items = z.array(item);
 
 export const getDomain = z.looseObject({ domain: item.nullable(), nameservers: z.array(item) });
 

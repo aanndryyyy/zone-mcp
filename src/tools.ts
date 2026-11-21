@@ -1,72 +1,19 @@
-import {
-  isInputRequiredResult,
-  type CallToolResult,
-  type InputRequiredResult,
-  type McpServer,
-  type ServerContext,
-} from "@modelcontextprotocol/server";
+import type { InputRequiredResult, McpServer, ServerContext } from "@modelcontextprotocol/server";
 import * as z from "zod";
-import { ZoneApiError, ZoneClient, type Method, type Pager, type Query } from "./client.js";
+import { ZoneApiError, ZoneClient, type Method, type Query } from "./client.js";
+import { asArray, domain, hostname, limit, listResult, page, run, seg, slim, vserver } from "./common.js";
 import { canElicit, confirmWrite, notConfirmed } from "./confirm.js";
+import { registerAccountTools } from "./areas/account.js";
+import { registerDomainOrderTools } from "./areas/domains.js";
+import { registerHostTools } from "./areas/hosts.js";
+import { registerHostingTools } from "./areas/hosting.js";
+import { registerDatabaseTools } from "./areas/databases.js";
+import { registerProcessTools } from "./areas/processes.js";
+import { registerServerAccessTools } from "./areas/server.js";
+import { registerZonePlusTools } from "./areas/zoneplus.js";
 import { describeEndpoint, searchEndpoints } from "./spec.js";
 import { LOG_KINDS, MAX_LINE_CHARS, logScript, parseLogOutput, type SshRunner } from "./ssh.js";
 import * as out from "./schemas.js";
-
-type ToolResult = CallToolResult;
-
-/** Same JSON as text (compact) and as `structuredContent` (typed by `outputSchema`). */
-const ok = (data: unknown): ToolResult => ({
-  content: [{ type: "text", text: JSON.stringify(data) }],
-  structuredContent: data as Record<string, unknown>,
-});
-
-const fail = (err: unknown): ToolResult => {
-  if (err instanceof ZoneApiError) {
-    const error: Record<string, unknown> = { status: err.status, code: err.code, message: err.message };
-    if (err.details !== undefined) error.details = err.details;
-    if (err.rateLimitRemaining) error.ratelimit_remaining = err.rateLimitRemaining;
-    return { content: [{ type: "text", text: JSON.stringify({ error }) }], isError: true };
-  }
-  return { content: [{ type: "text", text: `Error: ${(err as Error)?.message ?? String(err)}` }], isError: true };
-};
-
-/** API errors come back as tool errors the model can read; `input_required` (a confirmation request) passes through. */
-const run =
-  <A>(fn: (args: A, ctx: ServerContext) => Promise<unknown>) =>
-  async (args: A, ctx: ServerContext): Promise<ToolResult | InputRequiredResult> => {
-    try {
-      const data = await fn(args, ctx);
-      return isInputRequiredResult(data) ? data : ok(data);
-    } catch (err) {
-      return fail(err);
-    }
-  };
-
-/** Drop the hypermedia noise (`resource_url`, `_links`) the API puts on every object. */
-const slim = (data: unknown): unknown => {
-  if (Array.isArray(data)) return data.map(slim);
-  if (!data || typeof data !== "object") return data;
-  const copy: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(data)) if (k !== "resource_url" && k !== "_links") copy[k] = v;
-  return copy;
-};
-
-const asArray = (data: unknown): unknown[] => (Array.isArray(data) ? data : data == null ? [] : [data]);
-
-/** `{ [key]: items, pager? }` — tool results must be objects, and the API always returns arrays. */
-const listResult = (key: string, data: unknown, pager?: Pager) => ({ [key]: slim(asArray(data)), ...(pager ? { pager } : {}) });
-
-const seg = (s: string) => encodeURIComponent(s.trim());
-
-// ───────────────────────────── Shared input fields ─────────────────────────────
-
-const domain = z.string().min(1).describe("Domain name, e.g. 'example.com'.");
-const vserver = z
-  .string()
-  .min(1)
-  .describe("Webhosting (virtual server) name, usually its main domain, e.g. 'example.com' (see list_webhostings).");
-const page = z.number().int().min(1).optional().describe("Page number (default 1).");
-const limit = z.number().int().min(1).max(100).optional().describe("Items per page, 1–100 (default 10 on paginated endpoints).");
 
 const DNS_TYPES = ["a", "aaaa", "cname", "mx", "txt", "ns", "srv", "caa", "tlsa", "sshfp", "url"] as const;
 const dnsType = z
@@ -597,8 +544,8 @@ export function registerTools(server: McpServer, client: ZoneClient, ssh: SshRun
         "Check whether this machine can SSH into a webhosting (shared or Privaatserver; not cloud VPS): the SSH user " +
         "and server IP, the access mode (`public` or `whitelist`), whitelisted IPs, the registered public keys, which " +
         "of your local keys (ssh-agent, ~/.ssh/*.pub, ZONE_SSH_KEY) are registered, the server's host-key fingerprints " +
-        "and, unless `test` is false, a test login. `next_steps` says what to fix, using zone_api_request (which asks " +
-        "the user to confirm). Read-only.",
+        "and, unless `test` is false, a test login. `next_steps` says what to fix (add_ssh_key, add_ssh_whitelist_ip). " +
+        "Read-only.",
       inputSchema: z.object({
         vserver,
         test: z.boolean().optional().describe("Try a login (default true)."),
@@ -646,15 +593,15 @@ export function registerTools(server: McpServer, client: ZoneClient, ssh: SshRun
       if (!anyRegistered) {
         steps.push(
           `None of your local public keys is registered. Ask the user which key to use (local_keys has their public_key ` +
-            `text) or to create one with ssh-keygen -t ed25519, then add the PUBLIC key (never a private key) with zone_api_request ` +
-            `POST /vserver/${vserver}/ssh/publickey and body {"public_key": "ssh-ed25519 AAAA… comment", "comment": "<who/what>"}.`,
+            `text) or to create one with ssh-keygen -t ed25519, then register the PUBLIC key (never a private key) with ` +
+            `add_ssh_key(vserver: "${vserver}", public_key: "ssh-ed25519 AAAA… comment", comment: "<who/what>").`,
         );
       }
       if (t.access === "whitelist" && !connection.ok) {
         steps.push(
           `SSH accepts only whitelisted IPs${connection.tested ? "" : " (login not tested)"}. If this machine's public IP ` +
             `is not in \`whitelist\`, add it (ask the user, or check it from a shell) with ` +
-            `zone_api_request POST /vserver/${vserver}/ssh/whitelist and body {"ip": "<ip or CIDR>", "comment": "<who/where>"}.`,
+            `add_ssh_whitelist_ip(vserver: "${vserver}", ip: "<ip or CIDR>", comment: "<who/where>").`,
         );
       }
       if (anyRegistered && connection.tested && !connection.ok && /Too many authentication|refused/i.test(connection.error ?? "")) {
@@ -678,10 +625,6 @@ export function registerTools(server: McpServer, client: ZoneClient, ssh: SshRun
       };
     }),
   );
-
-  const hostname = z
-    .string()
-    .regex(/^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/, "A host name like 'www.example.com'.");
 
   server.registerTool(
     "read_logs",
@@ -789,6 +732,18 @@ export function registerTools(server: McpServer, client: ZoneClient, ssh: SshRun
     }),
   );
 
+  // ───────────────────────────── Per-area tools (src/areas) ─────────────────────────────
+
+  const deps = { server, client };
+  registerDomainOrderTools(deps);
+  registerHostTools(deps);
+  registerZonePlusTools(deps);
+  registerHostingTools(deps);
+  registerProcessTools(deps);
+  registerDatabaseTools(deps);
+  registerServerAccessTools(deps);
+  registerAccountTools(deps);
+
   // ───────────────────────────── Spec lookup + generic request ─────────────────────────────
 
   server.registerTool(
@@ -834,7 +789,7 @@ export function registerTools(server: McpServer, client: ZoneClient, ssh: SshRun
       title: "Call the ZoneID API",
       description:
         "Call any ZoneID API v2 endpoint, for everything the dedicated tools don't cover (mailbox create/update, " +
-        "autoreplies, MySQL create, cron create, SSH keys, FTP users, Redis, PM2, cloud VPS, domain contacts and renewals…). " +
+        "autoreplies, FTP users, cloud VPS, domain contacts and nameservers…). " +
         "`path` is relative to https://api.zone.eu/v2, e.g. '/vserver/example.com/crontab'. Look up the body fields with " +
         "describe_endpoint first. Responses are always arrays. GET and OPTIONS run directly; for POST, PUT and DELETE " +
         "the user is asked to confirm (when the client supports it), and the prompt shows the method, path and body. " +

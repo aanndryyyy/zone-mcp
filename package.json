@@ -1,7 +1,7 @@
 {
   "name": "zone-mcp",
   "version": "1.0.0",
-  "description": "MCP server for the Zone.ee (ZoneID API v2): domains, DNS records, webhosting, mail, MySQL, cron, SSL and cloud VPS.",
+  "description": "MCP server for the Zone.ee (ZoneID API v2): domains and renewals, DNS, webhosting hosts, PHP and Let's Encrypt, Zone+ WordPress, mail, MySQL, cron, SSL, SSH, PM2, billing and delegations.",
   "type": "module",
   "bin": {
     "zone-mcp": "dist/index.js"

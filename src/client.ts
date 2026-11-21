@@ -27,7 +27,8 @@ export class ZoneApiError extends Error {
 }
 
 export type Method = "GET" | "POST" | "PUT" | "DELETE" | "OPTIONS";
-export type Query = Record<string, string | number | boolean | undefined | null>;
+/** Query values; an array is sent PHP-style as repeated `key[]=…` parameters. */
+export type Query = Record<string, string | number | boolean | (string | number)[] | undefined | null>;
 
 export interface Pager {
   page: number;
@@ -146,7 +147,8 @@ export class ZoneClient {
       throw new ZoneApiError(400, "INVALID_PATH", `Path escapes the API base URL: ${path}`);
     }
     for (const [k, v] of Object.entries(query ?? {})) {
-      if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
+      if (Array.isArray(v)) for (const item of v) url.searchParams.append(`${k}[]`, String(item));
+      else if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
     }
     return url;
   }
