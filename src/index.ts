@@ -50,13 +50,20 @@ const handle = serveStdio(
           "server/discover": { ttlMs: HOUR, cacheScope: "public" },
         },
         instructions:
-          "Tools for a Zone.ee (zone.eu) hosting account via the ZoneID API v2. Start with list_domains or " +
-          "list_webhostings; a webhosting's `name` is the `vserver` argument for the mail/MySQL/cron/SSL tools. " +
+          "Tools for a Zone.ee (zone.eu) hosting account via the ZoneID API v2. Start with list_domains, " +
+          "list_webhostings or list_services; a webhosting's `name` is the `vserver` argument for the webhosting tools. " +
           "DNS record names are FQDNs; get a record's `id` from list_dns_records before updating or deleting it. " +
-          "For anything without a dedicated tool: find_endpoints → describe_endpoint → zone_api_request. " +
-          "The API allows 60 requests/min per IP, so don't poll. DNSSEC activation and DNS TTLs can't be changed " +
-          "through the API (use https://my.zone.eu). read_logs reads a webhosting's Apache, PHP and PM2 logs over SSH " +
-          "with this machine's SSH keys; if SSH fails, get_ssh_access shows why and how to fix it.",
+          "Hosts (subdomains), their PHP/docroot/proxy config and Let's Encrypt: list_hosts, get_host. WordPress and " +
+          "other Zone+ apps: list_app_installs, get_app_install; back up (create_app_backup) before upgrades, syncs and " +
+          "restores. Zone+ installs, copies, syncs, upgrades, restores and Let's Encrypt run in the background: tell the " +
+          "user and check back later instead of polling; the API allows 60 requests/min per IP. Writes that overwrite, " +
+          "delete, grant access or cost money (pay_invoices, change_hosting_plan, renew_domain, paid installs…) ask " +
+          "the user to confirm with the details; never call them unless the user asked for that outcome. Valid values " +
+          "for many fields (PHP versions, packages, permissions, upgrade versions) come from the matching get_/list_ " +
+          "tool's options. For anything without a dedicated tool: find_endpoints → describe_endpoint → zone_api_request. " +
+          "DNSSEC activation and DNS TTLs can't be changed through the API (use https://my.zone.eu). read_logs reads a " +
+          "webhosting's Apache, PHP and PM2 logs over SSH with this machine's SSH keys; if SSH fails, get_ssh_access " +
+          "shows why and how to fix it.",
       },
     );
     registerTools(server, client, ssh);

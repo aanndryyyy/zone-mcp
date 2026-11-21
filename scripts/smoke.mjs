@@ -124,5 +124,38 @@ if (zone) {
   await accepter.close();
 }
 
+// Read-only tools for hosts, Zone+, billing, plan, processes and services: SMOKE_EXTENDED=1. About 25 more requests,
+// so it first waits a minute for the rate-limit window (60/min per IP) to clear.
+if (process.env.SMOKE_EXTENDED) {
+  console.log("waiting 60 s for the rate limit before the extended pass…");
+  await new Promise((r) => setTimeout(r, 60_000));
+  const ext = await connect("zone-smoke-extended");
+  const call2 = caller(ext);
+  const acct = JSON.parse(await call2("get_account"));
+  check(acct.profile && "balance" in acct, "get_account: profile and balance");
+  await call2("list_invoices", { paid: false, limit: 3 });
+  await call2("list_domain_orders", { limit: 2 });
+  if (zone) await call2("get_domain_renewal_options", { domain: zone });
+  const svc = JSON.parse(await call2("list_services", { type: "webhosting" }));
+  const own = svc.services.find((s) => s.delegation === false);
+  if (own) await call2("list_delegations", { service_id: own.identificator });
+  if (vserver) {
+    const h = JSON.parse(await call2("list_hosts", { vserver, apache: true, limit: 2 }));
+    check(!JSON.stringify(h).includes("resource_url"), "list_hosts: nested resource_url removed");
+    await call2("list_hosts", { vserver, deprecated_php: true });
+    if (h.hosts[0]) await call2("get_host", { vserver, hostname: h.hosts[0].name });
+    await call2("get_hosting_plan", { vserver });
+    await call2("list_zoneplus_apps", { vserver, roles: "wp" });
+    const ins = JSON.parse(await call2("list_app_installs", { vserver, limit: 2 }));
+    if (ins.installs[0]) await call2("list_app_backups", { vserver, install_id: ins.installs[0].identificator });
+    await call2("list_pm2_processes", { vserver });
+    await call2("list_dedicated_ips", { vserver });
+    await call2("get_dkim", { vserver });
+    // Validation runs before any API call.
+    await call2("update_host_config", { vserver, hostname: vserver }, { expectError: true });
+  }
+  await ext.close();
+}
+
 console.log(failures ? `\n${failures} failure(s)` : "\nall passed");
 process.exit(failures ? 1 : 0);
