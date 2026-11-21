@@ -186,7 +186,7 @@ export function registerTools(server: McpServer, client: ZoneClient, ssh: SshRun
         "List the domains on the ZoneID account with expiry, DNSSEC, autorenew and delegation info. Paginated (see `pager`).",
       inputSchema: z.object({
         name: z.string().optional().describe("Only domains whose name contains this string."),
-        needs_renewal: z.boolean().optional().describe("Only domains expiring within 30 days."),
+        needs_renewal: z.boolean().optional().describe("Only domains that are expired or expire within 30 days."),
         renewable: z.boolean().optional().describe("Only renewable domains."),
         order_by: z.enum(["name", "expires"]).optional(),
         order_dir: z.enum(["asc", "desc"]).optional(),
