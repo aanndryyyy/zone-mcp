@@ -36,8 +36,9 @@ function fields(schema: Json, depth = 0): Record<string, unknown> | string {
       out[name] = fields(prop, depth + 1);
       continue;
     }
-    let type: string = prop.type ?? "any";
-    if (prop.type === "array") type = `${prop.items?.type ?? "any"}[]`;
+    const typeOf = (t: Json): string => (t?.type === "array" ? `${t.items?.type ?? "any"}[]` : (t?.type ?? "any"));
+    const variants = prop.oneOf ?? prop.anyOf;
+    const type = variants ? variants.map(typeOf).join(" | ") : typeOf(prop);
     const bits = [type];
     if (prop.enum) bits.push(`one of ${prop.enum.join("|")}`);
     if (prop.readOnly) bits.push("read-only");
@@ -61,17 +62,22 @@ const params = (list: Json[] = []) =>
 const templateRegex = (template: string) =>
   new RegExp(`^${template.replace(/\/+$/, "").replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\{[^}]+\}/g, "[^/]+")}/?$`);
 
-/** Find the spec path template for a concrete path (`/dns/example.com/a/1`) or a template. Literal segments win. */
-export function matchPath(path: string): string | undefined {
+/**
+ * Find the spec path template for a concrete path (`/dns/example.com/a/1`) or a template. Literal segments win,
+ * but with `method` a template that has that method wins over one that does not.
+ */
+export function matchPath(path: string, method?: string): string | undefined {
   let p = path.trim().split("?")[0]!.replace(/^\/?(v2\/)?/, "/");
   if (p.length > 1) p = p.replace(/\/+$/, "");
   const paths = Object.keys(spec().paths);
   if (paths.includes(p)) return p;
   if (paths.includes(`${p}/`)) return `${p}/`;
   const literals = (t: string) => t.split("/").filter((s) => s && !s.startsWith("{")).length;
+  const m = method?.toLowerCase();
+  const has = (t: string) => (m && spec().paths[t][m] ? 1 : 0);
   return paths
     .filter((t) => templateRegex(t).test(p))
-    .sort((a, b) => literals(b) - literals(a))[0];
+    .sort((a, b) => has(b) - has(a) || literals(b) - literals(a))[0];
 }
 
 /** Paths (with methods and summaries) whose path, tag or summary contains every word of `query`. */
@@ -89,7 +95,7 @@ export function searchEndpoints(query?: string) {
 
 /** Full description of one endpoint: parameters, request body fields and response fields per method. */
 export function describeEndpoint(path: string, method?: string) {
-  const template = matchPath(path);
+  const template = matchPath(path, method);
   if (!template) return undefined;
   const item = spec().paths[template];
   const wanted = method ? [method.toLowerCase()] : METHODS.filter((m) => item[m]);
